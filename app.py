@@ -10,31 +10,21 @@ import matplotlib.pyplot as plt
 import os
 import urllib.request
 
-# Cargar el clasificador Haar para detección de personas
-person_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fullbody.xml")
-
+# =================== CONFIGURACIÓN INICIAL ===================
 st.set_page_config(page_title="Clasificador en vivo", page_icon="🎥", layout="wide")
 st.title("🎥 Clasificación en vivo con Keras + Streamlit")
 st.caption("Cámara dentro de la página y resultados en la misma interfaz. Incluye selector de cámara/calidad y registro a CSV.")
 
-# ========== CONFIGURACIÓN DE DESCARGA ==========
-# OPCIÓN 1: Si subes los archivos a GitHub (< 100MB), deja estas líneas comentadas
-MODEL_URL = None  # "https://tu-url-de-google-drive-o-dropbox/keras_Model.h5"
-LABELS_URL = None  # "https://tu-url-de-google-drive-o-dropbox/labels.txt"
+# Cargar el clasificador Haar para detección de personas
+person_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fullbody.xml")
 
-# OPCIÓN 2: Si usas Google Drive, usa este formato:
-# Para obtener el link directo de Google Drive:
-# 1. Comparte el archivo y obtén el link
-# 2. El link será: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-# 3. Cámbialo a: https://drive.google.com/uc?export=download&id=FILE_ID
-# Ejemplo:
-# MODEL_URL = "https://drive.google.com/uc?export=download&id=TU_FILE_ID_AQUI"
-# LABELS_URL = "https://drive.google.com/uc?export=download&id=TU_FILE_ID_AQUI"
-
+# =================== DESCARGA Y CARGA DE MODELO ===================
+MODEL_URL = None  # URL de tu modelo si quieres descargarlo
+LABELS_URL = None  # URL de tus etiquetas si quieres descargarlas
 MODEL_PATH = "keras_Model.h5"
 LABELS_PATH = "labels.txt"
 
-# Función para descargar archivos si no existen
+# Función para descargar archivos
 def download_file(url, filepath):
     if url and not os.path.exists(filepath):
         try:
@@ -46,6 +36,7 @@ def download_file(url, filepath):
             return False
     return True
 
+# Cache para modelo y etiquetas
 @st.cache_resource
 def load_model_cached(model_path: str):
     return tf.keras.models.load_model(model_path, compile=False)
@@ -55,51 +46,33 @@ def load_labels(labels_path: str):
     with open(labels_path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f.readlines()]
 
-# Cargar recursos
+# Descargar si se configuró URL
+if MODEL_URL:
+    download_file(MODEL_URL, MODEL_PATH)
+if LABELS_URL:
+    download_file(LABELS_URL, LABELS_PATH)
+
+# Verificar existencia
+if not os.path.exists(MODEL_PATH) or not os.path.exists(LABELS_PATH):
+    st.error("❌ No se encontró el modelo o las etiquetas. Sube 'keras_Model.h5' y 'labels.txt' al proyecto.")
+    st.stop()
+
+# Cargar modelo y etiquetas
 try:
-    # Intentar descargar archivos si las URLs están configuradas
-    if MODEL_URL:
-        download_file(MODEL_URL, MODEL_PATH)
-    if LABELS_URL:
-        download_file(LABELS_URL, LABELS_PATH)
-    
-    # Verificar que los archivos existen
-    if not os.path.exists(MODEL_PATH):
-        st.error(f"❌ No se encontró {MODEL_PATH}")
-        st.info("📝 **Opciones para solucionar:**\n"
-                "1. Sube keras_Model.h5 y labels.txt directamente a tu repositorio de GitHub\n"
-                "2. O configura MODEL_URL y LABELS_URL en las líneas 22-23 con links de Google Drive/Dropbox")
-        st.stop()
-    
-    if not os.path.exists(LABELS_PATH):
-        st.error(f"❌ No se encontró {LABELS_PATH}")
-        st.stop()
-    
     model = load_model_cached(MODEL_PATH)
     labels = load_labels(LABELS_PATH)
     st.sidebar.success("✅ Modelo cargado correctamente")
-    
 except Exception as e:
-    st.error(f"❌ Error al cargar el modelo/etiquetas: {e}")
-    st.info("📝 Asegúrate de que keras_Model.h5 y labels.txt estén disponibles")
+    st.error(f"❌ Error al cargar modelo/etiquetas: {e}")
     st.stop()
 
-# --- Sidebar: opciones de cámara y logging ---
+# =================== SIDEBAR: CÁMARA Y LOG ===================
 st.sidebar.header("Ajustes de cámara")
-facing = st.sidebar.selectbox(
-    "Tipo de cámara (facingMode)",
-    options=["auto (por defecto)", "user (frontal)", "environment (trasera)"],
-    index=0
-)
-quality = st.sidebar.selectbox(
-    "Calidad de video",
-    options=["640x480", "1280x720", "1920x1080"],
-    index=1
-)
+facing = st.sidebar.selectbox("Tipo de cámara (facingMode)", ["auto (por defecto)", "user (frontal)", "environment (trasera)"], index=0)
+quality = st.sidebar.selectbox("Calidad de video", ["640x480", "1280x720", "1920x1080"], index=1)
 w, h = map(int, quality.split("x"))
 
-# Media constraints para WebRTC
-video_constraints: dict = {"width": w, "height": h}
+video_constraints = {"width": w, "height": h}
 if facing != "auto (por defecto)":
     video_constraints["facingMode"] = facing.split(" ")[0]
 media_constraints = {"video": video_constraints, "audio": False}
@@ -113,10 +86,8 @@ if "pred_log" not in st.session_state:
 if "last_log_ts" not in st.session_state:
     st.session_state.last_log_ts = 0.0
 
-# Configuración STUN para WebRTC
-RTC_CONFIGURATION = RTCConfiguration(
-    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-)
+# =================== CONFIGURACIÓN WEBRTC ===================
+RTC_CONFIGURATION = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 
 class VideoTransformer(VideoTransformerBase):
     def __init__(self) -> None:
@@ -127,21 +98,18 @@ class VideoTransformer(VideoTransformerBase):
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
 
-        # Detección de personas
+        # Detectar personas
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         persons = person_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-
-        # Dibujar cuadros alrededor de las personas detectadas
         for (x, y, w, h) in persons:
             cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
-        # Preparación a 224x224 y normalización
-        resized = cv2.resize(img, (224, 224), interpolation=cv2.INTER_AREA)
-        x = resized.astype(np.float32).reshape(1, 224, 224, 3)
-        x = (x / 127.5) - 1.0
+        # Preparar imagen para Keras
+        resized = cv2.resize(img, (224, 224))
+        x_input = (resized.astype(np.float32).reshape(1, 224, 224, 3) / 127.5) - 1.0
 
         # Predicción
-        pred = self.model.predict(x, verbose=0)
+        pred = self.model.predict(x_input, verbose=0)
         idx = int(np.argmax(pred))
         label = self.labels[idx] if idx < len(self.labels) else f"Clase {idx}"
         conf = float(pred[0][idx])
@@ -151,11 +119,12 @@ class VideoTransformer(VideoTransformerBase):
         overlay = img.copy()
         text = f"{label} | {conf*100:.1f}%"
         cv2.rectangle(overlay, (5, 5), (5 + 8*len(text), 45), (0, 0, 0), -1)
-        cv2.putText(overlay, text, (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
+        cv2.putText(overlay, text, (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
         return overlay
 
-# Layout
+# =================== LAYOUT PRINCIPAL ===================
 left, right = st.columns([2, 1], gap="large")
+
 with left:
     st.subheader("Cámara en vivo")
     webrtc_ctx = webrtc_streamer(
@@ -166,11 +135,7 @@ with left:
         video_transformer_factory=VideoTransformer,
         async_processing=True,
     )
-    st.info(
-        "Si no ves tu cámara, concede permisos del navegador o prueba con otro (Chrome recomendado). "
-        "En móviles, 'user' = frontal y 'environment' = trasera (si el dispositivo lo soporta).",
-        icon="ℹ️",
-    )
+    st.info("Si no ves tu cámara, concede permisos del navegador o prueba otro navegador.", icon="ℹ️")
 
 with right:
     st.subheader("Resultados")
@@ -191,13 +156,13 @@ with right:
         disabled=st.session_state.pred_log.empty,
     )
 
-# Actualización periódica de resultados y logging
+# =================== LOOP DE PREDICCIÓN ===================
 if webrtc_ctx and webrtc_ctx.state.playing:
     for _ in range(300000):
         if not webrtc_ctx.state.playing:
             break
         vt = webrtc_ctx.video_transformer
-        if vt is not None and vt.latest["class"] is not None:
+        if vt and vt.latest["class"] is not None:
             cls = vt.latest["class"]
             conf = vt.latest["confidence"]
             result_placeholder.markdown(f"**Clase detectada:** {cls}\n\n**Confianza:** {conf*100:.2f}%")
@@ -206,40 +171,36 @@ if webrtc_ctx and webrtc_ctx.state.playing:
                 now = time.time()
                 if now - st.session_state.last_log_ts >= log_every_n_seconds:
                     st.session_state.pred_log.loc[len(st.session_state.pred_log)] = [
-                        datetime.utcnow().isoformat(),
-                        cls,
-                        round(conf, 6),
+                        datetime.utcnow().isoformat(), cls, round(conf, 6)
                     ]
                     st.session_state.last_log_ts = now
         time.sleep(0.2)
 else:
     st.write("Activa la cámara para ver aquí las predicciones.")
 
+# =================== MODO ALTERNATIVO: FOTO ===================
 st.markdown("---")
 with st.expander("⚠️ Modo alternativo (captura por foto, sin WebRTC)"):
-    st.write("Si tu red bloquea WebRTC, usa una foto para predecir de forma puntual.")
     snap = st.camera_input("Captura una imagen")
     if snap is not None:
         file_bytes = np.asarray(bytearray(snap.read()), dtype=np.uint8)
         img = cv2.imdecode(file_bytes, 1)
-        resized = cv2.resize(img, (224, 224), interpolation=cv2.INTER_AREA)
-        x = resized.astype(np.float32).reshape(1, 224, 224, 3)
-        x = (x / 127.5) - 1.0
-        pred = model.predict(x, verbose=0)
+        resized = cv2.resize(img, (224, 224))
+        x_input = (resized.astype(np.float32).reshape(1, 224, 224, 3) / 127.5) - 1.0
+        pred = model.predict(x_input, verbose=0)
         idx = int(np.argmax(pred))
         label = labels[idx] if idx < len(labels) else f"Clase {idx}"
         conf = float(pred[0][idx])
         st.image(img, caption=f"{label} | {conf*100:.2f}%")
         st.success(f"Predicción: **{label}** ({conf*100:.2f}%)")
 
-# ------------------ GRAFICAS ------------------
+# =================== GRAFICAS ===================
 st.markdown("## 📊 Estadísticas de predicciones")
-
 if not st.session_state.pred_log.empty:
     df = st.session_state.pred_log.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    # 1️⃣ Conteo de cada clase detectada
+    # 1️⃣ Conteo de clases
     fig1, ax1 = plt.subplots()
     df["label"].value_counts().plot(kind="bar", ax=ax1, color="skyblue")
     ax1.set_title("Cantidad de predicciones por clase")
@@ -253,7 +214,7 @@ if not st.session_state.pred_log.empty:
     ax2.set_ylabel("Confianza")
     st.pyplot(fig2)
 
-    # 3️⃣ Evolución temporal de predicciones
+    # 3️⃣ Evolución temporal
     fig3, ax3 = plt.subplots()
     df.set_index("timestamp")["confidence"].plot(ax=ax3, marker="o", linestyle="-")
     ax3.set_title("Confianza en el tiempo")
@@ -270,9 +231,7 @@ if not st.session_state.pred_log.empty:
 
     # 5️⃣ Últimas 10 predicciones
     fig5, ax5 = plt.subplots()
-    df.tail(10).set_index("timestamp")["label"].value_counts().plot(
-        kind="bar", ax=ax5, color="purple"
-    )
+    df.tail(10).set_index("timestamp")["label"].value_counts().plot(kind="bar", ax=ax5, color="purple")
     ax5.set_title("Últimas 10 predicciones por clase")
     ax5.set_ylabel("Cantidad")
     st.pyplot(fig5)
