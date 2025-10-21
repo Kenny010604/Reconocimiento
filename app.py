@@ -7,6 +7,8 @@ from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration, VideoTransformerBase
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import os
+import urllib.request
 
 # Cargar el clasificador Haar para detección de personas
 person_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fullbody.xml")
@@ -15,8 +17,34 @@ st.set_page_config(page_title="Clasificador en vivo", page_icon="🎥", layout="
 st.title("🎥 Clasificación en vivo con Keras + Streamlit")
 st.caption("Cámara dentro de la página y resultados en la misma interfaz. Incluye selector de cámara/calidad y registro a CSV.")
 
+# ========== CONFIGURACIÓN DE DESCARGA ==========
+# OPCIÓN 1: Si subes los archivos a GitHub (< 100MB), deja estas líneas comentadas
+MODEL_URL = None  # "https://tu-url-de-google-drive-o-dropbox/keras_Model.h5"
+LABELS_URL = None  # "https://tu-url-de-google-drive-o-dropbox/labels.txt"
+
+# OPCIÓN 2: Si usas Google Drive, usa este formato:
+# Para obtener el link directo de Google Drive:
+# 1. Comparte el archivo y obtén el link
+# 2. El link será: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+# 3. Cámbialo a: https://drive.google.com/uc?export=download&id=FILE_ID
+# Ejemplo:
+# MODEL_URL = "https://drive.google.com/uc?export=download&id=TU_FILE_ID_AQUI"
+# LABELS_URL = "https://drive.google.com/uc?export=download&id=TU_FILE_ID_AQUI"
+
 MODEL_PATH = "keras_Model.h5"
 LABELS_PATH = "labels.txt"
+
+# Función para descargar archivos si no existen
+def download_file(url, filepath):
+    if url and not os.path.exists(filepath):
+        try:
+            with st.spinner(f"⬇️ Descargando {filepath}..."):
+                urllib.request.urlretrieve(url, filepath)
+            st.success(f"✅ {filepath} descargado correctamente")
+        except Exception as e:
+            st.error(f"❌ Error al descargar {filepath}: {e}")
+            return False
+    return True
 
 @st.cache_resource
 def load_model_cached(model_path: str):
@@ -29,10 +57,31 @@ def load_labels(labels_path: str):
 
 # Cargar recursos
 try:
+    # Intentar descargar archivos si las URLs están configuradas
+    if MODEL_URL:
+        download_file(MODEL_URL, MODEL_PATH)
+    if LABELS_URL:
+        download_file(LABELS_URL, LABELS_PATH)
+    
+    # Verificar que los archivos existen
+    if not os.path.exists(MODEL_PATH):
+        st.error(f"❌ No se encontró {MODEL_PATH}")
+        st.info("📝 **Opciones para solucionar:**\n"
+                "1. Sube keras_Model.h5 y labels.txt directamente a tu repositorio de GitHub\n"
+                "2. O configura MODEL_URL y LABELS_URL en las líneas 22-23 con links de Google Drive/Dropbox")
+        st.stop()
+    
+    if not os.path.exists(LABELS_PATH):
+        st.error(f"❌ No se encontró {LABELS_PATH}")
+        st.stop()
+    
     model = load_model_cached(MODEL_PATH)
     labels = load_labels(LABELS_PATH)
+    st.sidebar.success("✅ Modelo cargado correctamente")
+    
 except Exception as e:
-    st.error(f"No se pudo cargar el modelo/etiquetas: {e}")
+    st.error(f"❌ Error al cargar el modelo/etiquetas: {e}")
+    st.info("📝 Asegúrate de que keras_Model.h5 y labels.txt estén disponibles")
     st.stop()
 
 # --- Sidebar: opciones de cámara y logging ---
