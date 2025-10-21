@@ -21,7 +21,7 @@ person_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_full
 # =================== DESCARGA Y CARGA DE MODELO ===================
 MODEL_URL = None  # URL de tu modelo si quieres descargarlo
 LABELS_URL = None  # URL de tus etiquetas si quieres descargarlas
-MODEL_PATH = "keras_Model.h5"
+MODEL_PATH = "keras_model.h5"  # m minúscula, igual que tu repo
 LABELS_PATH = "labels.txt"
 
 # Función para descargar archivos
