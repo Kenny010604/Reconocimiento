@@ -1,10 +1,10 @@
-streamlit==1.38.0
-streamlit-webrtc==0.47.7
+streamlit
+streamlit-webrtc
 tensorflow
-numpy==1.24.3
-typing-extensions==4.5.0
-rich==13.3.5   # compatible con Streamlit 1.38
-markdown-it-py==4.0.0
-pygments==2.19.2
-mdurl==0.1.2
-streamlit-webrtc==0.47.7
+numpy
+typing-extensions
+rich
+markdown-it-py
+pygments
+mdurl
+streamlit-webrtc
