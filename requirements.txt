@@ -8,3 +8,4 @@ markdown-it-py
 pygments
 mdurl
 streamlit-webrtc
+opencv-python-headless
