@@ -21,10 +21,9 @@ person_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_full
 # =================== DESCARGA Y CARGA DE MODELO ===================
 MODEL_URL = None  # URL de tu modelo si quieres descargarlo
 LABELS_URL = None  # URL de tus etiquetas si quieres descargarlas
-MODEL_PATH = "keras_model.h5"  # m minúscula, igual que tu repo
+MODEL_PATH = "keras_model.h5"
 LABELS_PATH = "labels.txt"
 
-# Función para descargar archivos
 def download_file(url, filepath):
     if url and not os.path.exists(filepath):
         try:
@@ -36,7 +35,6 @@ def download_file(url, filepath):
             return False
     return True
 
-# Cache para modelo y etiquetas
 @st.cache_resource
 def load_model_cached(model_path: str):
     return tf.keras.models.load_model(model_path, compile=False)
@@ -46,18 +44,15 @@ def load_labels(labels_path: str):
     with open(labels_path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f.readlines()]
 
-# Descargar si se configuró URL
 if MODEL_URL:
     download_file(MODEL_URL, MODEL_PATH)
 if LABELS_URL:
     download_file(LABELS_URL, LABELS_PATH)
 
-# Verificar existencia
 if not os.path.exists(MODEL_PATH) or not os.path.exists(LABELS_PATH):
-    st.error("❌ No se encontró el modelo o las etiquetas. Sube 'keras_Model.h5' y 'labels.txt' al proyecto.")
+    st.error("❌ No se encontró el modelo o las etiquetas. Sube 'keras_model.h5' y 'labels.txt' al proyecto.")
     st.stop()
 
-# Cargar modelo y etiquetas
 try:
     model = load_model_cached(MODEL_PATH)
     labels = load_labels(LABELS_PATH)
@@ -156,25 +151,21 @@ with right:
         disabled=st.session_state.pred_log.empty,
     )
 
-# =================== LOOP DE PREDICCIÓN ===================
-if webrtc_ctx and webrtc_ctx.state.playing:
-    for _ in range(300000):
-        if not webrtc_ctx.state.playing:
-            break
-        vt = webrtc_ctx.video_transformer
-        if vt and vt.latest["class"] is not None:
-            cls = vt.latest["class"]
-            conf = vt.latest["confidence"]
-            result_placeholder.markdown(f"**Clase detectada:** {cls}\n\n**Confianza:** {conf*100:.2f}%")
-            progress_placeholder.progress(min(max(conf, 0.0), 1.0))
-            if enable_log:
-                now = time.time()
-                if now - st.session_state.last_log_ts >= log_every_n_seconds:
-                    st.session_state.pred_log.loc[len(st.session_state.pred_log)] = [
-                        datetime.utcnow().isoformat(), cls, round(conf, 6)
-                    ]
-                    st.session_state.last_log_ts = now
-        time.sleep(0.2)
+# =================== ACTUALIZACIÓN DE RESULTADOS ===================
+if webrtc_ctx and webrtc_ctx.video_transformer:
+    vt = webrtc_ctx.video_transformer
+    if vt.latest["class"] is not None:
+        cls = vt.latest["class"]
+        conf = vt.latest["confidence"]
+        result_placeholder.markdown(f"**Clase detectada:** {cls}\n\n**Confianza:** {conf*100:.2f}%")
+        progress_placeholder.progress(min(max(conf, 0.0), 1.0))
+        if enable_log:
+            now = time.time()
+            if now - st.session_state.last_log_ts >= log_every_n_seconds:
+                st.session_state.pred_log.loc[len(st.session_state.pred_log)] = [
+                    datetime.utcnow().isoformat(), cls, round(conf, 6)
+                ]
+                st.session_state.last_log_ts = now
 else:
     st.write("Activa la cámara para ver aquí las predicciones.")
 
@@ -193,6 +184,12 @@ with st.expander("⚠️ Modo alternativo (captura por foto, sin WebRTC)"):
         conf = float(pred[0][idx])
         st.image(img, caption=f"{label} | {conf*100:.2f}%")
         st.success(f"Predicción: **{label}** ({conf*100:.2f}%)")
+
+        # ✅ Registrar predicción en pred_log
+        if enable_log:
+            st.session_state.pred_log.loc[len(st.session_state.pred_log)] = [
+                datetime.utcnow().isoformat(), label, round(conf, 6)
+            ]
 
 # =================== GRAFICAS ===================
 st.markdown("## 📊 Estadísticas de predicciones")
@@ -236,4 +233,4 @@ if not st.session_state.pred_log.empty:
     ax5.set_ylabel("Cantidad")
     st.pyplot(fig5)
 else:
-    st.info("No hay datos para mostrar gráficas aún. Activa la cámara y registra predicciones.")
+    st.info("No hay datos para mostrar gráficas aún. Activa la cámara o toma una foto para registrar predicciones.")
